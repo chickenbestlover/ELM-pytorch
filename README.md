@@ -8,6 +8,7 @@ You can run the code using cpu or gpu mode.
 Usage: 
 cd mnist
 GPU mode: python main_ELM.py
+
 CPU mode: python main_ELM.py --no-cuda
 
 The training was completed in 2.0sec and the accuracy reached 97.77%.
