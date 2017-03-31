@@ -5,8 +5,10 @@ It's MNIST tutorial with basic ELM algorithm.
 
 You can run the code using cpu or gpu mode.
 
-Usage: 
+Usage:
+
 cd mnist
+
 GPU mode: python main_ELM.py
 
 CPU mode: python main_ELM.py --no-cuda
