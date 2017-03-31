@@ -4,6 +4,7 @@ from torch.autograd import Variable
 class pseudoInverse(object):
     def __init__(self,params):
         self.params=list(params)
+        self.is_cuda=self.params[len(self.params)-1].is_cuda
 
     def train(self,inputs,targets):
         oneHotTarget=self.oneHotVectorize(targets=targets)
@@ -13,7 +14,10 @@ class pseudoInverse(object):
 
 
         xtx= torch.mm(inputs.t(),inputs)
-        I=Variable(torch.eye(dimInput).cuda())
+
+        I = Variable(torch.eye(dimInput))
+        if self.is_cuda:
+            I=I.cuda()
         w = Variable(torch.inverse(xtx.data+0.0001*I.data))
         w = torch.mm(w,inputs.t())
         w = torch.mm(w,oneHotTarget)
@@ -28,7 +32,9 @@ class pseudoInverse(object):
         for i in xrange(targets.size()[0]):
             oneHotTarget[i][targets[i].data[0]]=1
 
-        oneHotTarget=Variable(oneHotTarget.cuda())
+        if self.is_cuda:
+            oneHotTarget=oneHotTarget.cuda()
+        oneHotTarget=Variable(oneHotTarget)
 
         return oneHotTarget
 
