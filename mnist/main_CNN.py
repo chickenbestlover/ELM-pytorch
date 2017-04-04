@@ -108,10 +108,12 @@ def test(epoch):
         test_loss, correct, len(test_loader.dataset),
         100. * correct / len(test_loader.dataset)))
 
-init=time.time()
-for epoch in range(1, args.epochs + 1):
-    train(epoch)
-    test(epoch)
-ending=time.time()
 
-print(ending-init)
+for epoch in range(1, args.epochs + 1):
+    init = time.time()
+    train(epoch)
+    ending = time.time()
+    print(ending - init)
+    test(epoch)
+
+

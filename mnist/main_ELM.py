@@ -57,7 +57,7 @@ class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
         self.fc1 = nn.Linear(28*28, 7000)
-        #self.bn = nn.BatchNorm1d(6000)
+        #self.bn = nn.BatchNorm1d(7000)
         self.fc2 = nn.Linear(7000, 10, bias=False) # ELM do not use bias in the output layer.
 
     def forward(self, x):
@@ -65,7 +65,7 @@ class Net(nn.Module):
 
         x = self.fc1(x)
         #x = self.bn(x)
-        x = F.relu(x)
+        x = F.leaky_relu(x)
         x = self.fc2(x)
         return x
 
@@ -73,7 +73,7 @@ class Net(nn.Module):
         x = x.view(-1, self.num_flat_features(x))
         x = self.fc1(x)
         #x = self.bn(x)
-        x = F.relu(x)
+        x = F.leaky_relu(x)
         return x
 
     def num_flat_features(self, x):
@@ -88,28 +88,51 @@ model = Net()
 if args.cuda:
     model.cuda()
 
-optimizer= pseudoInverse(params=model.parameters())
+optimizer= pseudoInverse(params=model.parameters(),C=1e-2)
 
 
 def train():
+    init = time.time()
     model.train()
     correct = 0
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data), Variable(target)
+
         hiddenOut = model.forwardToHidden(data)
-        init = time.time()
         optimizer.train(inputs=hiddenOut, targets=target)
-        ending = time.time()
-        print('training time: {:.2f}sec'.format(ending - init))
+        output = model.forward(data)
+        pred=output.data.max(1)[1]
+        correct += pred.eq(target.data).cpu().sum()
+    ending = time.time()
+    print('training time: {:.2f}sec'.format(ending - init))
+    print('\nTrain set accuracy: {}/{} ({:.0f}%)\n'.format(
+        correct, len(train_loader.dataset),
+        100. * correct / len(train_loader.dataset)))
+
+def train_someBatch(batchidx=0):
+    init = time.time()
+    model.train()
+    correct = 0
+    for batch_idx, (data, target) in enumerate(train_loader):
+        if args.cuda:
+            data, target = data.cuda(), target.cuda()
+        data, target = Variable(data), Variable(target)
+
+        if batch_idx == batchidx:
+            hiddenOut = model.forwardToHidden(data)
+            optimizer.train(inputs=hiddenOut, targets=target)
         output = model.forward(data)
         pred=output.data.max(1)[1]
         correct += pred.eq(target.data).cpu().sum()
 
+    ending = time.time()
+    print('training time: {:.2f}sec'.format(ending - init))
     print('\nTrain set accuracy: {}/{} ({:.0f}%)\n'.format(
         correct, len(train_loader.dataset),
         100. * correct / len(train_loader.dataset)))
+
 
 def test():
     model.eval()
@@ -125,6 +148,40 @@ def test():
         correct, len(test_loader.dataset),
         100. * correct / len(test_loader.dataset)))
 
+def train_sequential():
+    model.train()
+    correct = 0
+    for batch_idx, (data, target) in enumerate(train_loader):
+        if args.cuda:
+            data, target = data.cuda(), target.cuda()
+        data, target = Variable(data, volatile=True), Variable(target)
+        hiddenOut = model.forwardToHidden(data)
+        optimizer.train_sequential(hiddenOut,target)
 
+
+        output=model.forward(data)
+        pred=output.data.max(1)[1]
+        correct += pred.eq(target.data).cpu().sum()
+        print('\n{}st Batch train set accuracy: {}/{} ({:.0f}%)\n'.format(batch_idx,
+            correct, (train_loader.batch_size*(batch_idx+1)),
+            100. * correct / (train_loader.batch_size*(batch_idx+1))))
+
+        test()
+
+
+# Basic ELM. Note that this is non-iterative learning;
+# therefore batch-size is the same as # of training samples.
 train()
 test()
+
+# Online Sequential ELM, batch_size is resized.
+train_loader = torch.utils.data.DataLoader(
+    datasets.MNIST('../data', train=True, download=True,
+                   transform=transforms.Compose([
+                       transforms.ToTensor(),
+                       transforms.Normalize((0,), (1,))
+                   ])),
+    batch_size=1000, shuffle=True, **kwargs)
+
+train_someBatch(batchidx=0) #initialize phase; offline batch training
+train_sequential() # Sequential learning phase; online sequential training
