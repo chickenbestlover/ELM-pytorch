@@ -22,9 +22,9 @@ parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
 #                    help='learning rate (default: 0.01)')
 #parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
 #                    help='SGD momentum (default: 0.5)')
-parser.add_argument('--no-cuda', action='store_true', default=False,
+parser.add_argument('--no-cuda', action='store_true', default=True,
                     help='enables CUDA training')
-parser.add_argument('--seed', type=int, default=2, metavar='S',
+parser.add_argument('--seed', type=int, default=0, metavar='S',
                     help='random seed (default: 1)')
 #parser.add_argument('--log-interval', type=int, default=10, metavar='N',
 #                    help='how many batches to wait before logging training status')
@@ -56,10 +56,10 @@ class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
         self.conv1 = nn.Conv2d(1, 10, kernel_size=5, padding=1)
-        self.conv2 = nn.Conv2d(10, 100, kernel_size=5, padding=1)
+        self.conv2 = nn.Conv2d(10, 450, kernel_size=4, padding=1)
 
         #self.fc1 = nn.Linear(16*20, 1200, bias=True)
-        self.fc2 = nn.Linear(25*100, 10, bias=False)
+        self.fc2 = nn.Linear(36*450, 10, bias=False)
 
     def forward(self, x):
 
