@@ -41,7 +41,7 @@ In CPU mode, the training was completed in 100.92sec and the accuracy was the sa
 
 If you do not have enough memory for the training process, reduce the number of hidden neurons and try again.
 
-# Convoltutional Extreme Learning Machine
+# Convolutional Extreme Learning Machine
 
 __Usage:__
 
