@@ -148,31 +148,31 @@ def test():
         correct, len(test_loader.dataset),
         100. * correct / len(test_loader.dataset)))
 
-def train_sequential():
+def train_sequential(starting_batch_idex=0):
     model.train()
     correct = 0
     for batch_idx, (data, target) in enumerate(train_loader):
-        if args.cuda:
-            data, target = data.cuda(), target.cuda()
-        data, target = Variable(data, volatile=True), Variable(target)
-        hiddenOut = model.forwardToHidden(data)
-        optimizer.train_sequential(hiddenOut,target)
+        if batch_idx >= starting_batch_idex:
+            if args.cuda:
+                data, target = data.cuda(), target.cuda()
+            data, target = Variable(data, volatile=True), Variable(target)
+            hiddenOut = model.forwardToHidden(data)
+            optimizer.train_sequential(hiddenOut,target)
 
 
-        output=model.forward(data)
-        pred=output.data.max(1)[1]
-        correct += pred.eq(target.data).cpu().sum()
-        print('\n{}st Batch train set accuracy: {}/{} ({:.0f}%)\n'.format(batch_idx,
-            correct, (train_loader.batch_size*(batch_idx+1)),
-            100. * correct / (train_loader.batch_size*(batch_idx+1))))
+            output=model.forward(data)
+            pred=output.data.max(1)[1]
+            correct += pred.eq(target.data).cpu().sum()
+            print('\n{}st Batch train set accuracy: {}/{} ({:.0f}%)\n'.format(batch_idx,
+                correct, (train_loader.batch_size*(batch_idx+1)),
+                100. * correct / (train_loader.batch_size*(batch_idx+1))))
 
-        test()
+            test()
 
 
 # Basic ELM. Note that this is non-iterative learning;
 # therefore batch-size is the same as # of training samples.
 train()
-test()
 
 # Online Sequential ELM, batch_size is resized.
 train_loader = torch.utils.data.DataLoader(
@@ -184,4 +184,6 @@ train_loader = torch.utils.data.DataLoader(
     batch_size=1000, shuffle=True, **kwargs)
 
 train_someBatch(batchidx=0) #initialize phase; offline batch training
-train_sequential() # Sequential learning phase; online sequential training
+train_sequential(starting_batch_idex=1) # Sequential learning phase; online sequential training
+test()
+
