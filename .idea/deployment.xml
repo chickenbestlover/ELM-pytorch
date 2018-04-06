@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData" serverName="143.248.151.59:ELM_PYTORCH">
+    <serverData>
+      <paths name="143.248.151.59:ELM_PYTORCH">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/Engineering/ELM-pytorch" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+    </serverData>
+  </component>
+</project>

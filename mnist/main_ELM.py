@@ -13,21 +13,18 @@ from pseudoInverse import pseudoInverse
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch ELM MNIST Example')
 parser.add_argument('--batch-size', type=int, default=60000, metavar='N',
-                    help='input batch size for training (default: 64)')
-parser.add_argument('--test-batch-size', type=int, default=100, metavar='N',
-                    help='input batch size for testing (default: 1000)')
-#parser.add_argument('--epochs', type=int, default=10, metavar='N',
-#                   help='number of epochs to train (default: 10)')
-#parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
-#                   help='learning rate (default: 0.01)')
-#parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
-#                   help='SGD momentum (default: 0.5)')
+                    help='input batch size for training (default: 60000)')
+parser.add_argument('--test-batch-size', type=int, default=10000, metavar='N',
+                    help='input batch size for testing (default: 10000)')
+parser.add_argument('--hidden_size', type=int, default=8000, metavar='N',
+                    help='hidden size')
+parser.add_argument('--activation', type=str, default='leaky_relu',
+                    help='non-linear activation (default: leaky_relu, '
+                         'supported activations : relu, leaky_relu, tanhshrink, softsign, selu')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
-parser.add_argument('--seed', type=int, default=2, metavar='S',
+parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
-#parser.add_argument('--log-interval', type=int, default=10, metavar='N',
-#                    help='how many batches to wait before logging training status')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -35,7 +32,7 @@ torch.manual_seed(args.seed)
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
 print('Use CUDA:',args.cuda)
-
+print('Pytorch Version:',torch.__version__)
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 train_loader = torch.utils.data.DataLoader(
@@ -54,52 +51,44 @@ test_loader = torch.utils.data.DataLoader(
 
 
 class Net(nn.Module):
-    def __init__(self):
+    def __init__(self,hidden_size=7000,activation='leaky_relu'):
         super(Net, self).__init__()
-        self.fc1 = nn.Linear(28*28, 7000)
-        #self.bn = nn.BatchNorm1d(7000)
-        self.fc2 = nn.Linear(7000, 10, bias=False) # ELM do not use bias in the output layer.
+        self.fc1 = nn.Linear(28*28, hidden_size)
+        self.activation = getattr(F,activation)
+        if activation in ['relu', 'leaky_relu']:
+            torch.nn.init.xavier_uniform(self.fc1.weight,gain=nn.init.calculate_gain(activation))
+        else:
+            torch.nn.init.xavier_uniform(self.fc1.weight, gain=1)
+        self.fc2 = nn.Linear(hidden_size, 10, bias=False) # ELM do not use bias in the output layer.
 
     def forward(self, x):
-        x = x.view(-1, self.num_flat_features(x))
-
+        x = x.view(x.size(0),-1)
         x = self.fc1(x)
-        #x = self.bn(x)
-        x = F.leaky_relu(x)
+        x = self.activation(x)
         x = self.fc2(x)
         return x
 
     def forwardToHidden(self, x):
-        x = x.view(-1, self.num_flat_features(x))
+        x = x.view(x.size(0),-1)
         x = self.fc1(x)
-        #x = self.bn(x)
-        x = F.leaky_relu(x)
+        x = self.activation(x)
         return x
 
-    def num_flat_features(self, x):
-        size = x.size()[1:]  # all dimensions except the batch dimension
-        num_features = 1
-        for s in size:
-            num_features *= s
-        return num_features
-
-model = Net()
-
+model = Net(hidden_size=args.hidden_size,activation=args.activation)
 if args.cuda:
     model.cuda()
+optimizer= pseudoInverse(params=model.parameters(),C=0.001,L=0)
 
-optimizer= pseudoInverse(params=model.parameters(),C=1e-2)
 
-
-def train():
+def train(args,model,optimizer,train_loader):
     init = time.time()
     model.train()
     correct = 0
     for batch_idx, (data, target) in enumerate(train_loader):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-        data, target = Variable(data), Variable(target)
-
+        data, target = Variable(data,requires_grad=False, volatile=True), \
+                       Variable(target,requires_grad=False, volatile=True)
         hiddenOut = model.forwardToHidden(data)
         optimizer.train(inputs=hiddenOut, targets=target)
         output = model.forward(data)
@@ -107,52 +96,53 @@ def train():
         correct += pred.eq(target.data).cpu().sum()
     ending = time.time()
     print('training time: {:.2f}sec'.format(ending - init))
-    print('\nTrain set accuracy: {}/{} ({:.0f}%)\n'.format(
+    print('\nTrain set accuracy: {}/{} ({:.2f}%)\n'.format(
         correct, len(train_loader.dataset),
         100. * correct / len(train_loader.dataset)))
 
-def train_someBatch(batchidx=0):
+def train_someBatch(args,model, optimizer, train_loader, batchidx=0):
     init = time.time()
     model.train()
     correct = 0
     for batch_idx, (data, target) in enumerate(train_loader):
-        if args.cuda:
-            data, target = data.cuda(), target.cuda()
-        data, target = Variable(data), Variable(target)
-
         if batch_idx == batchidx:
+            if args.cuda:
+                data, target = data.cuda(), target.cuda()
+            data, target = Variable(data, requires_grad=False, volatile=True), \
+                           Variable(target, requires_grad=False,volatile=True)
             hiddenOut = model.forwardToHidden(data)
             optimizer.train(inputs=hiddenOut, targets=target)
-        output = model.forward(data)
-        pred=output.data.max(1)[1]
-        correct += pred.eq(target.data).cpu().sum()
+            output = model.forward(data)
+            pred=output.data.max(1)[1]
+            correct += pred.eq(target.data).cpu().sum()
 
     ending = time.time()
     print('training time: {:.2f}sec'.format(ending - init))
-    print('\nTrain set accuracy: {}/{} ({:.0f}%)\n'.format(
-        correct, len(train_loader.dataset),
-        100. * correct / len(train_loader.dataset)))
+    print('\n{}st Batch Train set accuracy: {}/{} ({:.2f}%)\n'.format(batchidx,
+        correct, train_loader.batch_size,
+        100. * correct / train_loader.batch_size))
 
+    return correct
 
-def test():
-    model.eval()
+def test(args,model,test_loader):
+    model.train()
     correct = 0
     for data, target in test_loader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
-        data, target = Variable(data, volatile=True), Variable(target)
+        data, target = Variable(data,requires_grad=False, volatile=True), Variable(target,requires_grad=False, volatile=True)
         output = model.forward(data)
         pred=output.data.max(1)[1]
         correct += pred.eq(target.data).cpu().sum()
-    print('\nTest set accuracy: {}/{} ({:.0f}%)\n'.format(
+    print('\nTest set accuracy: {}/{} ({:.2f}%)\n'.format(
         correct, len(test_loader.dataset),
         100. * correct / len(test_loader.dataset)))
 
-def train_sequential(starting_batch_idex=0):
+def train_sequential(args, model, optimizer, train_loader, test_loader, starting_batch_index=0, correct=None):
     model.train()
-    correct = 0
+    correct = correct
     for batch_idx, (data, target) in enumerate(train_loader):
-        if batch_idx >= starting_batch_idex:
+        if batch_idx >= starting_batch_index:
             if args.cuda:
                 data, target = data.cuda(), target.cuda()
             data, target = Variable(data, volatile=True), Variable(target)
@@ -163,17 +153,22 @@ def train_sequential(starting_batch_idex=0):
             output=model.forward(data)
             pred=output.data.max(1)[1]
             correct += pred.eq(target.data).cpu().sum()
-            print('\n{}st Batch train set accuracy: {}/{} ({:.0f}%)\n'.format(batch_idx,
-                correct, (train_loader.batch_size*(batch_idx+1)),
-                100. * correct / (train_loader.batch_size*(batch_idx+1))))
+            print('\n{}st Batch train set accuracy: {}/{} ({:.2f}%)\n'.format(batch_idx,correct,
+                                                                              (train_loader.batch_size * (batch_idx + 1 )),
+                                                                              100. * correct / (train_loader.batch_size * (batch_idx + 1 ))))
 
-            test()
+            test(args,model,test_loader)
 
-
+print('Example 1: Train SLFN using Basic ELM')
+print('#hidden neuron= {}'.format(args.hidden_size))
 # Basic ELM. Note that this is non-iterative learning;
 # therefore batch-size is the same as # of training samples.
-train()
+train(args,model,optimizer,train_loader)
+test(args,model,test_loader)
 
+
+print('Example 2: Train SLFN using Online Sequential ELM')
+print('#hidden neuron= {}'.format(list(model.parameters())[2].data.size(1)))
 # Online Sequential ELM, batch_size is resized.
 train_loader = torch.utils.data.DataLoader(
     datasets.MNIST('../data', train=True, download=True,
@@ -181,9 +176,11 @@ train_loader = torch.utils.data.DataLoader(
                        transforms.ToTensor(),
                        transforms.Normalize((0,), (1,))
                    ])),
-    batch_size=1000, shuffle=True, **kwargs)
+    batch_size=10000, shuffle=True, **kwargs)
 
-train_someBatch(batchidx=0) #initialize phase; offline batch training
-train_sequential(starting_batch_idex=1) # Sequential learning phase; online sequential training
-test()
+#Step1: Initialize phase; offline batch training
+correct=train_someBatch(args,model,optimizer, train_loader,batchidx=0)
+#Step2: Sequential learning phase; online sequential training
+train_sequential(args, model, optimizer, train_loader, test_loader, starting_batch_index=1, correct=correct)
+
 

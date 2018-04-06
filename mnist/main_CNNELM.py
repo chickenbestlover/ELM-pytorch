@@ -12,22 +12,14 @@ import torch.legacy.nn as legacy_nn
 from pseudoInverse import pseudoInverse
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch ELM MNIST Example')
-parser.add_argument('--batch-size', type=int, default=60000, metavar='N',
+parser.add_argument('--batch-size', type=int, default=30000, metavar='N',
                     help='input batch size for training (default: 64)')
 parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                     help='input batch size for testing (default: 1000)')
-#parser.add_argument('--epochs', type=int, default=10, metavar='N',
-#                    help='number of epochs to train (default: 10)')
-#parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
-#                    help='learning rate (default: 0.01)')
-#parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
-#                    help='SGD momentum (default: 0.5)')
-parser.add_argument('--no-cuda', action='store_true', default=True,
+parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
 parser.add_argument('--seed', type=int, default=0, metavar='S',
                     help='random seed (default: 1)')
-#parser.add_argument('--log-interval', type=int, default=10, metavar='N',
-#                    help='how many batches to wait before logging training status')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -55,11 +47,11 @@ test_loader = torch.utils.data.DataLoader(
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(1, 10, kernel_size=5, padding=1)
-        self.conv2 = nn.Conv2d(10, 450, kernel_size=4, padding=1)
+        self.conv1 = nn.Conv2d(1, 15, kernel_size=5, padding=1)
+        self.conv2 = nn.Conv2d(15, 210, kernel_size=4, padding=1)
 
         #self.fc1 = nn.Linear(16*20, 1200, bias=True)
-        self.fc2 = nn.Linear(36*450, 10, bias=False)
+        self.fc2 = nn.Linear(36*210, 10, bias=False)
 
     def forward(self, x):
 
@@ -86,7 +78,6 @@ class Net(nn.Module):
         x = self.conv2(x)
         x = F.max_pool2d(x,kernel_size=2)
         x = F.relu(x)
-        print(self.num_flat_features(x))
         x = x.view(-1, self.num_flat_features(x))
         #x = self.fc1(x)
         #x = F.relu(x)
@@ -103,7 +94,7 @@ class Net(nn.Module):
 model = Net()
 if args.cuda:
     model.cuda()
-optimizer= pseudoInverse(params=model.parameters(),C=1e-5)
+optimizer= pseudoInverse(params=model.parameters(),C=1e-3)
 #print(list(model.parameters()))
 
 
@@ -131,6 +122,29 @@ def train():
         correct, len(train_loader.dataset),
         100. * correct / len(train_loader.dataset)))
         '''
+
+def train_someBatch(batchidx=0):
+    init = time.time()
+    model.train()
+    correct = 0
+    for batch_idx, (data, target) in enumerate(train_loader):
+        if args.cuda:
+            data, target = data.cuda(), target.cuda()
+        data, target = Variable(data), Variable(target)
+
+        if batch_idx == batchidx:
+            hiddenOut = model.forwardToHidden(data)
+            optimizer.train(inputs=hiddenOut, targets=target)
+        output = model.forward(data)
+        pred = output.data.max(1)[1]
+        correct += pred.eq(target.data).cpu().sum()
+
+    ending = time.time()
+    print('training time: {:.2f}sec'.format(ending - init))
+    print('\nTrain set accuracy: {}/{} ({:.0f}%)\n'.format(
+        correct, len(train_loader.dataset),
+        100. * correct / len(train_loader.dataset)))
+
 def train_accuracy():
     model.train()
     correct = 0
@@ -142,8 +156,8 @@ def train_accuracy():
         pred = output.data.max(1)[1]
         correct += pred.eq(target.data).cpu().sum()
     ending = time.time()
-    print('training time: {:.2f}sec'.format(ending - init))
-    print('\nTrain set accuracy: {}/{} ({:.0f}%)\n'.format(
+    #print('training time: {:.2f}sec'.format(ending - init))
+    print('\nTrain set accuracy: {}/{} ({:.2f}%)\n'.format(
         correct, len(train_loader.dataset),
         100. * correct / len(train_loader.dataset)))
 
@@ -159,15 +173,49 @@ def test():
         pred=output.data.max(1)[1]
         #print(pred)
         correct += pred.eq(target.data).cpu().sum()
-    print('\nTest set accuracy: {}/{} ({:.0f}%)\n'.format(
+    print('\nTest set accuracy: {}/{} ({:.2f}%)\n'.format(
         correct, len(test_loader.dataset),
         100. * correct / len(test_loader.dataset)))
 
+def train_sequential(starting_batch_idex=0):
+    model.train()
+    correct = 0
+    for batch_idx, (data, target) in enumerate(train_loader):
+        if batch_idx >= starting_batch_idex:
+            if args.cuda:
+                data, target = data.cuda(), target.cuda()
+            data, target = Variable(data, volatile=True), Variable(target)
+            hiddenOut = model.forwardToHidden(data)
+            optimizer.train_sequential(hiddenOut,target)
 
-init=time.time()
-train()
-train_accuracy()
-test()
-ending=time.time()
 
-print(ending-init)
+            output=model.forward(data)
+            pred=output.data.max(1)[1]
+            correct += pred.eq(target.data).cpu().sum()
+            print('\n{}st Batch train set accuracy: {}/{} ({:.2f}%)\n'.format(batch_idx,
+                correct, (train_loader.batch_size*(batch_idx+1-starting_batch_idex)),
+                100. * correct / (train_loader.batch_size*(batch_idx+1-starting_batch_idex))))
+
+            test()
+
+# CNN-ELM
+#init=time.time()
+#train()
+#train_accuracy()
+#test()
+#ending=time.time()
+#print(ending-init)
+
+# Online Sequential CNN-ELM, batch_size is resized.
+train_loader = torch.utils.data.DataLoader(
+    datasets.MNIST('../data', train=True, download=True,
+                   transform=transforms.Compose([
+                       transforms.ToTensor(),
+                       transforms.Normalize((0,), (1,))
+                   ])),
+    batch_size=10000, shuffle=True, **kwargs)
+
+train_someBatch(batchidx=0) #initialize phase; offline batch training
+train_sequential(starting_batch_idex=1) # Sequential learning phase; online sequential training
+train_sequential(starting_batch_idex=0) # Sequential learning phase; online sequential training
+
